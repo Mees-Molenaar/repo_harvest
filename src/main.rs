@@ -91,9 +91,8 @@ fn clone_repo(github_url: &str) -> PathBuf {
         .output()
         .expect("Failed to execute command");
 
-    println!("Status: {:?}", command);
-
     if !command.status.success() {
+        println!("Status: {:?}", command);
         panic!("Failed to clone the repository");
     }
 
@@ -113,15 +112,13 @@ fn main() {
 
     let include_pattern = args.include.as_deref().unwrap_or("**/*");
 
-    env::set_current_dir(repo_path).unwrap();
-
-    let included_file_paths = glob(include_pattern)
+    let included_file_paths = glob(&(repo_path.to_string_lossy().to_string() + "/" + include_pattern))
         .expect("Error reading temporary cloned directory.")
         .filter_map(Result::ok)
         .collect::<HashSet<PathBuf>>();
 
     let excluded_file_paths = match &args.exclude {
-        Some(pattern) => glob(pattern)
+        Some(pattern) => glob(&(repo_path.to_string_lossy().to_string() + "/" + pattern))
             .expect("Failed to read exclude glob pattern")
             .filter_map(Result::ok)
             .collect::<HashSet<PathBuf>>(),
@@ -145,7 +142,7 @@ fn main() {
                     let content = fs::read_to_string(path)
                         .unwrap_or_else(|_| "Error reading file".to_string());
                     FileEntry {
-                        location: path.display().to_string(),
+                        location: path.display().to_string().replace(&(repo_path.to_string_lossy().to_string() + "/"), ""),
                         content,
                     }
                 })
@@ -160,19 +157,20 @@ fn main() {
 
             let mut file =
                 File::create(&output_file).expect("Error creating or opening output file.");
+                        
             let entries: Vec<FileEntry> = filtered_files
                 .iter()
                 .map(|path| {
                     let content = fs::read_to_string(path)
                         .unwrap_or_else(|_| "Error reading file".to_string());
                     FileEntry {
-                        location: path.display().to_string(),
+                        location: path.display().to_string().replace(&(repo_path.to_string_lossy().to_string() + "/"), ""),
                         content,
                     }
                 })
                 .collect();
             for entry in entries {
-                let markdown = format!("## {}\n\n{}", entry.location, entry.content);
+                let markdown = format!("## {}\n{}\n", entry.location, entry.content);
                 file.write_all(markdown.as_bytes())
                     .expect("Error writing file contents to output file.");
             }
