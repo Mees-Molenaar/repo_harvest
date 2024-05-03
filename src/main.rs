@@ -99,7 +99,7 @@ fn clone_repo(github_url: &str) -> PathBuf {
     temp_dir
 }
 
-fn create_markdown_output(filtered_files: Vec<&PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) {
+fn create_markdown_output(filtered_files: Vec<PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) {
     output_file.set_extension("md");
 
     let mut file =
@@ -123,7 +123,7 @@ fn create_markdown_output(filtered_files: Vec<&PathBuf>, repo_path: &PathBuf, mu
     }
 }
 
-fn create_json_output(filtered_files: Vec<&PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) {
+fn create_json_output(filtered_files: Vec<PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) {
     
     output_file.set_extension("json");
 
@@ -143,17 +143,13 @@ fn create_json_output(filtered_files: Vec<&PathBuf>, repo_path: &PathBuf, mut ou
         .expect("Error writing file contents to output file.");
 }
 
-fn main() {
-    let args = Cli::parse();
+fn get_filtered_files(
+    repo_path: &PathBuf,
+    include_pattern: Option<String>,
+    exclude_pattern: Option<String>,
+) -> Vec<PathBuf> {
 
-    if !does_repo_exist(&args.github_url) {
-        println!("The repository does not exist");
-        return;
-    }
-
-    let repo_path = clone_repo(&args.github_url);
-
-    let included_file_paths = match &args.include {
+    let included_file_paths = match &include_pattern {
         Some(pattern) => glob(&(repo_path.to_string_lossy().to_string() + "/" + pattern))
             .expect("Failed to read include glob pattern")
             .filter_map(Result::ok)
@@ -164,7 +160,7 @@ fn main() {
             .collect::<HashSet<PathBuf>>(),
     };
 
-    let excluded_file_paths = match &args.exclude {
+    let excluded_file_paths = match &exclude_pattern {
         Some(pattern) => glob(&(repo_path.to_string_lossy().to_string() + "/" + pattern))
             .expect("Failed to read exclude glob pattern")
             .filter_map(Result::ok)
@@ -174,7 +170,26 @@ fn main() {
 
     let filtered_files = included_file_paths
         .difference(&excluded_file_paths)
-        .collect::<Vec<&PathBuf>>();
+        .cloned()
+        .collect::<Vec<PathBuf>>();
+
+    return filtered_files;
+}
+
+fn main() {
+    let args = Cli::parse();
+
+    if !does_repo_exist(&args.github_url) {
+        println!("The repository does not exist");
+        return;
+    }
+
+    let repo_path = clone_repo(&args.github_url);
+
+    let filtered_files = get_filtered_files(
+        &repo_path, 
+        args.include, 
+        args.exclude);
 
     let mut output_file = PathBuf::new();
     output_file.push(&args.output_file);
