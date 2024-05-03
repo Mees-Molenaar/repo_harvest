@@ -153,12 +153,16 @@ fn main() {
 
     let repo_path = clone_repo(&args.github_url);
 
-    let include_pattern = args.include.as_deref().unwrap_or("**/*");
-
-    let included_file_paths = glob(&(repo_path.to_string_lossy().to_string() + "/" + include_pattern))
-        .expect("Error reading temporary cloned directory.")
-        .filter_map(Result::ok)
-        .collect::<HashSet<PathBuf>>();
+    let included_file_paths = match &args.include {
+        Some(pattern) => glob(&(repo_path.to_string_lossy().to_string() + "/" + pattern))
+            .expect("Failed to read include glob pattern")
+            .filter_map(Result::ok)
+            .collect::<HashSet<PathBuf>>(),
+        None => glob(&(repo_path.to_string_lossy().to_string() + "/**/*"))
+            .expect("Error reading temporary cloned directory.")
+            .filter_map(Result::ok)
+            .collect::<HashSet<PathBuf>>(),
+    };
 
     let excluded_file_paths = match &args.exclude {
         Some(pattern) => glob(&(repo_path.to_string_lossy().to_string() + "/" + pattern))
