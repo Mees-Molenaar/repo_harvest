@@ -27,7 +27,7 @@ struct Cli {
         long,
         value_enum,
         rename_all = "kebab-case",
-        default_value = "json"
+        default_value = "markdown"
     )]
     format: OutputFormat,
     /// Include hidden files
@@ -99,9 +99,52 @@ fn clone_repo(github_url: &str) -> PathBuf {
     temp_dir
 }
 
+fn create_markdown_output(filtered_files: Vec<&PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) {
+    output_file.set_extension("md");
+
+    let mut file =
+        File::create(&output_file).expect("Error creating or opening output file.");
+                
+    let entries: Vec<FileEntry> = filtered_files
+        .iter()
+        .map(|path| {
+            let content = fs::read_to_string(path)
+                .unwrap_or_else(|_| "Error reading file".to_string());
+            FileEntry {
+                location: path.display().to_string().replace(&(repo_path.to_string_lossy().to_string() + "/"), ""),
+                content,
+            }
+        })
+        .collect();
+    for entry in entries {
+        let markdown = format!("## {}\n{}\n", entry.location, entry.content);
+        file.write_all(markdown.as_bytes())
+            .expect("Error writing file contents to output file.");
+    }
+}
+
+fn create_json_output(filtered_files: Vec<&PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) {
+    
+    output_file.set_extension("json");
+
+    let file = File::create(&output_file).expect("Error creating or opening output file.");
+    let entries: Vec<FileEntry> = filtered_files
+        .iter()
+        .map(|path| {
+            let content = fs::read_to_string(path)
+                .unwrap_or_else(|_| "Error reading file".to_string());
+            FileEntry {
+                location: path.display().to_string().replace(&(repo_path.to_string_lossy().to_string() + "/"), ""),
+                content,
+            }
+        })
+        .collect();
+    serde_json::to_writer(&file, &entries)
+        .expect("Error writing file contents to output file.");
+}
+
 fn main() {
     let args = Cli::parse();
-    println!("{:?}", args);
 
     if !does_repo_exist(&args.github_url) {
         println!("The repository does not exist");
@@ -129,51 +172,16 @@ fn main() {
         .difference(&excluded_file_paths)
         .collect::<Vec<&PathBuf>>();
 
+    let mut output_file = PathBuf::new();
+    output_file.push(&args.output_file);
+
     match &args.format {
         OutputFormat::Json => {
-            let mut output_file = PathBuf::new();
-            output_file.push(&args.output_file);
-            output_file.set_extension("json");
-
-            let file = File::create(&output_file).expect("Error creating or opening output file.");
-            let entries: Vec<FileEntry> = filtered_files
-                .iter()
-                .map(|path| {
-                    let content = fs::read_to_string(path)
-                        .unwrap_or_else(|_| "Error reading file".to_string());
-                    FileEntry {
-                        location: path.display().to_string().replace(&(repo_path.to_string_lossy().to_string() + "/"), ""),
-                        content,
-                    }
-                })
-                .collect();
-            serde_json::to_writer(&file, &entries)
-                .expect("Error writing file contents to output file.");
+            create_json_output(filtered_files, &repo_path, output_file);
         }
         OutputFormat::Markdown => {
-            let mut output_file = PathBuf::new();
-            output_file.push(&args.output_file);
-            output_file.set_extension("md");
-
-            let mut file =
-                File::create(&output_file).expect("Error creating or opening output file.");
-                        
-            let entries: Vec<FileEntry> = filtered_files
-                .iter()
-                .map(|path| {
-                    let content = fs::read_to_string(path)
-                        .unwrap_or_else(|_| "Error reading file".to_string());
-                    FileEntry {
-                        location: path.display().to_string().replace(&(repo_path.to_string_lossy().to_string() + "/"), ""),
-                        content,
-                    }
-                })
-                .collect();
-            for entry in entries {
-                let markdown = format!("## {}\n{}\n", entry.location, entry.content);
-                file.write_all(markdown.as_bytes())
-                    .expect("Error writing file contents to output file.");
-            }
+            create_markdown_output(filtered_files, &repo_path, output_file);
         }
     };
+    
 }
