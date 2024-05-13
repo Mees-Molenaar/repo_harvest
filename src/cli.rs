@@ -1,33 +1,39 @@
 use clap::{Parser, ValueEnum};
 
 #[derive(Parser, Debug)]
+#[clap(author, about, version, long_about = None)]
 pub struct Cli {
-    /// The Github URL of the repository you want to fetch
+    /// The Github URL of the repository you want to fetch.
+    #[clap(help = "Specify the Github repository URL.")]
     pub github_url: String,
-    /// Exclude pattern
-    #[clap(short = 'e', long)]
+
+    /// Glob pattern to exclude files or directories
+    #[clap(short = 'e', long = "exclude", help = "Exclude files matching the specified glob pattern.")]
     pub exclude: Option<String>,
+
     /// Include pattern
-    #[clap(short = 'p', long)]
+    #[clap(short = 'p', long = "include", help = "Include files matching the specified glob pattern.")]
     pub include: Option<String>,
-    /// Output format
-    /// Can be one of, json, markdown
+
+    /// Specifies the output format of the result
     #[clap(
         short = 'f',
-        long,
+        long = "format",
         value_enum,
         rename_all = "kebab-case",
-        default_value = "markdown"
+        default_value_t = OutputFormat::Markdown,
+        help = "Choose an output format: json or markdown."
     )]
     pub format: OutputFormat,
-    /// Include hidden files
-    /// By default, hidden files are not included
-    /// If you want to include hidden files, set this flag to true
-    #[clap(short = 'i', long, default_value = "false")]
-    pub hidden: Option<bool>,
-    /// The output file
-    #[clap(short, long, default_value = "output")]
+
+    /// Include hidden files in the output
+    #[clap(short = 'i', long = "include-hidden", default_value = "false", help = "Include hidden files in the output.")]
+    pub hidden: bool,
+
+    /// Specifies the output file name.
+    #[clap(short = 'o', long = "output", default_value = "output", help = "Set the output file path.")]
     pub output_file: String,
+    
     // Output style
     // Can be one of, folder, one-file
     // #[clap(short='s', long, value_enum, rename_all="kebab-case", default_value_t = OutputStyle::OneFile)]
