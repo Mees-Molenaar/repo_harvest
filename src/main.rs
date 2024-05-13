@@ -2,12 +2,7 @@ use clap::{Parser, ValueEnum};
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
-    env,
-    fs::{self, File},
-    io::Write,
-    path::PathBuf,
-    process::Command,
+    collections::HashSet, env, fs::{self, File}, io::Write, path::PathBuf, process::Command
 };
 
 #[derive(Parser, Debug)]
@@ -73,30 +68,29 @@ fn does_repo_exist(github_url: &str) -> bool {
     command.status.success()
 }
 
-fn clone_repo(github_url: &str) -> PathBuf {
+fn clone_repo(github_url: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
     // Create a temporary directory to clone the repository to
     // Don't precisely know what happens with these strings yet
     // Got it from: https://stackoverflow.com/a/76378247
-    let temp_dir: PathBuf = (env::temp_dir().to_string_lossy().to_string() + "repo").into();
+    let temp_dir = env::temp_dir().join("repo");
 
     if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir).expect("Failed to remove the temporary directory");
+        fs::remove_dir_all(&temp_dir)?;
     }
 
-    let command = Command::new("gh")
+    let output = Command::new("gh")
         .arg("repo")
         .arg("clone")
         .arg(github_url)
         .arg(&temp_dir)
-        .output()
-        .expect("Failed to execute command");
+        .output()?;
 
-    if !command.status.success() {
-        println!("Status: {:?}", command);
-        panic!("Failed to clone the repository");
+    if !output.status.success() {
+        println!("Status: {:?}", output);
+        return Err(From::from("Failed to clone repository"));
     }
 
-    temp_dir
+    Ok(temp_dir)
 }
 
 fn create_markdown_output(filtered_files: Vec<PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) {
@@ -176,23 +170,22 @@ fn get_filtered_files(
     return filtered_files;
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
     if !does_repo_exist(&args.github_url) {
         println!("The repository does not exist");
-        return;
+        return Ok(());
     }
 
-    let repo_path = clone_repo(&args.github_url);
+    let repo_path = clone_repo(&args.github_url)?;
 
     let filtered_files = get_filtered_files(
         &repo_path, 
         args.include, 
         args.exclude);
 
-    let mut output_file = PathBuf::new();
-    output_file.push(&args.output_file);
+    let output_file = PathBuf::from(&args.output_file);
 
     match &args.format {
         OutputFormat::Json => {
@@ -202,5 +195,7 @@ fn main() {
             create_markdown_output(filtered_files, &repo_path, output_file);
         }
     };
+
+    Ok(())
     
 }
