@@ -1,9 +1,10 @@
 mod cli;
+mod github;
 
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet, env, fs::{self, File}, io::Write, path::PathBuf, process::Command
+    collections::HashSet, fs::{self, File}, io::Write, path::PathBuf
 };
 
 
@@ -14,41 +15,6 @@ struct FileEntry {
     content: String,
 }
 
-fn does_repo_exist(github_url: &str) -> bool {
-    let command = Command::new("gh")
-        .arg("repo")
-        .arg("view")
-        .arg(github_url)
-        .output()
-        .expect("Failed to execute command");
-
-    command.status.success()
-}
-
-fn clone_repo(github_url: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    // Create a temporary directory to clone the repository to
-    // Don't precisely know what happens with these strings yet
-    // Got it from: https://stackoverflow.com/a/76378247
-    let temp_dir = env::temp_dir().join("repo");
-
-    if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir)?;
-    }
-
-    let output = Command::new("gh")
-        .arg("repo")
-        .arg("clone")
-        .arg(github_url)
-        .arg(&temp_dir)
-        .output()?;
-
-    if !output.status.success() {
-        println!("Status: {:?}", output);
-        return Err(From::from("Failed to clone repository"));
-    }
-
-    Ok(temp_dir)
-}
 
 fn create_markdown_output(filtered_files: Vec<PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) {
     output_file.set_extension("md");
@@ -130,12 +96,12 @@ fn get_filtered_files(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = cli::parse_args();
 
-    if !does_repo_exist(&args.github_url) {
+    if !github::does_repo_exist(&args.github_url) {
         println!("The repository does not exist");
         return Ok(());
     }
 
-    let repo_path = clone_repo(&args.github_url)?;
+    let repo_path = github::clone_repo(&args.github_url)?;
 
     let filtered_files = get_filtered_files(
         &repo_path, 
