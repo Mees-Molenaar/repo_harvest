@@ -1,55 +1,12 @@
-use clap::{Parser, ValueEnum};
+mod cli;
+
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet, env, fs::{self, File}, io::Write, path::PathBuf, process::Command
 };
 
-#[derive(Parser, Debug)]
-struct Cli {
-    /// The Github URL of the repository you want to fetch
-    github_url: String,
-    /// Exclude pattern
-    #[clap(short = 'e', long)]
-    exclude: Option<String>,
-    /// Include pattern
-    #[clap(short = 'p', long)]
-    include: Option<String>,
-    /// Output format
-    /// Can be one of, json, markdown
-    #[clap(
-        short = 'f',
-        long,
-        value_enum,
-        rename_all = "kebab-case",
-        default_value = "markdown"
-    )]
-    format: OutputFormat,
-    /// Include hidden files
-    /// By default, hidden files are not included
-    /// If you want to include hidden files, set this flag to true
-    #[clap(short = 'i', long, default_value = "false")]
-    hidden: Option<bool>,
-    /// The output file
-    #[clap(short, long, default_value = "output")]
-    output_file: String,
-    // Output style
-    // Can be one of, folder, one-file
-    // #[clap(short='s', long, value_enum, rename_all="kebab-case", default_value_t = OutputStyle::OneFile)]
-    // output_style: OutputStyle,
-}
 
-#[derive(ValueEnum, Clone, Debug)]
-enum OutputStyle {
-    Folder,
-    OneFile,
-}
-
-#[derive(ValueEnum, Clone, Debug)]
-enum OutputFormat {
-    Json,
-    Markdown,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct FileEntry {
@@ -171,7 +128,7 @@ fn get_filtered_files(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Cli::parse();
+    let args = cli::parse_args();
 
     if !does_repo_exist(&args.github_url) {
         println!("The repository does not exist");
@@ -188,10 +145,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_file = PathBuf::from(&args.output_file);
 
     match &args.format {
-        OutputFormat::Json => {
+        cli::OutputFormat::Json => {
             create_json_output(filtered_files, &repo_path, output_file);
         }
-        OutputFormat::Markdown => {
+        cli::OutputFormat::Markdown => {
             create_markdown_output(filtered_files, &repo_path, output_file);
         }
     };
