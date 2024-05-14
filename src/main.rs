@@ -1,10 +1,11 @@
+use anyhow::Result;
 use std::path::PathBuf;
 
 mod cli;
 mod github;
 mod file_processing;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     let args = cli::parse_args();
 
     if !github::does_repo_exist(&args.github_url)? {
