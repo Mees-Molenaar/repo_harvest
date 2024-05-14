@@ -7,7 +7,7 @@ mod file_processing;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = cli::parse_args();
 
-    if !github::does_repo_exist(&args.github_url) {
+    if !github::does_repo_exist(&args.github_url)? {
         println!("The repository does not exist");
         return Ok(());
     }
