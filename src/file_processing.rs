@@ -27,7 +27,7 @@ pub fn create_markdown_output(filtered_files: Vec<PathBuf>, repo_path: &PathBuf,
 
 pub fn create_json_output(filtered_files: Vec<PathBuf>, repo_path: &PathBuf, mut output_file: PathBuf) -> Result<()> {
     output_file.set_extension("json");
-    let file = File::create(&output_file).expect("Error creating or opening output file.");
+    let file = File::create(&output_file).context("Error creating or opening output file.")?;
     
     let entries: Vec<FileEntry> = build_file_entries(&filtered_files, repo_path)?;
     serde_json::to_writer(&file, &entries).context("Error writing file contents to output file")
