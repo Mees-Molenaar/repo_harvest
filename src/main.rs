@@ -17,16 +17,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let filtered_files = file_processing::get_filtered_files(
         &repo_path, 
         args.include, 
-        args.exclude);
+        args.exclude)?;
 
     let output_file = PathBuf::from(&args.output_file);
 
     match &args.format {
         cli::OutputFormat::Json => {
-            file_processing::create_json_output(filtered_files, &repo_path, output_file);
+            file_processing::create_json_output(filtered_files, &repo_path, output_file)?;
         }
         cli::OutputFormat::Markdown => {
-            file_processing::create_markdown_output(filtered_files, &repo_path, output_file);
+            file_processing::create_markdown_output(filtered_files, &repo_path, output_file)?;
         }
     };
 
