@@ -71,35 +71,62 @@ pub fn get_filtered_files(
     let included_file_paths = glob(&include_path)
         .context("Failed to read include glob pattern")?
         .filter_map(Result::ok)
-        .filter(|path| include_hidden || !is_hidden(&path))
+        .filter(|path| path.is_file())
         .map(|path| path.strip_prefix(repo_path).unwrap().to_path_buf())
+        .filter(|path| include_hidden || !is_hidden(path))
         .collect::<HashSet<_>>();
 
     let excluded_file_paths = if let Some(pattern) = exclude_pattern {
-       let exclude_path = format!("{}/{}", repo_path.display(), pattern);
+        let exclude_path = format!("{}/{}", repo_path.display(), pattern);
         glob(&exclude_path)
             .context("Failed to read exclude glob pattern")?
             .filter_map(Result::ok)
-            .filter(|path| include_hidden || !is_hidden(&path))
+            .filter(|path| path.is_file())
             .map(|path: PathBuf| path.strip_prefix(repo_path).unwrap().to_path_buf())
+            .filter(|path: &PathBuf| include_hidden || !is_hidden(path))
             .collect::<HashSet<_>>()
     } else {
         HashSet::new()
     };
-  
+
+    println!("Included File Paths");
+    println!("{:?}", included_file_paths);
+
+    println!("Excluded File Paths");
+    println!("{:?}", excluded_file_paths);
+
     let filtered_files = included_file_paths
-    .difference(&excluded_file_paths)
-    .cloned()
-    .collect();
+        .difference(&excluded_file_paths)
+        .cloned()
+        .collect();
 
     Ok(filtered_files)
 }
 
+/// Determines whether a file or directory is hidden.
+///
+/// A file or directory is considered hidden if it starts with a dot (`.`).
+/// This function checks all components of the given path, so it returns `true`
+/// if any component (directory or file) in the path is hidden.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+/// assert_eq!(is_hidden(&PathBuf::from("/not_hidden/file.txt")), false);
+/// assert_eq!(is_hidden(&PathBuf::from("/.hidden/file.txt")), true);
+/// assert_eq!(is_hidden(&PathBuf::from("/not_hidden/.file.txt")), true);
+/// assert_eq!(is_hidden(&PathBuf::from("/.hidden/.file")), true);
+/// ```
 fn is_hidden(path: &PathBuf) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .map(|name| name.starts_with('.'))
-        .unwrap_or(false)
+    println!("{:?}", path);
+    path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .map(|s| s.starts_with('.'))
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(test)]
@@ -117,30 +144,36 @@ mod tests {
         filtered_files: Vec<PathBuf>,
     }
 
-    fn setup_repo(extension: &str) -> RepoSetup {
+    fn setup_repo(extension: &str) -> Result<RepoSetup, anyhow::Error> {
+        // Create a temporary directory and set necessary paths
         let temp_dir = assert_fs::TempDir::new().unwrap();
         let repo_path = temp_dir.path().join("repo");
         let mut output_path = temp_dir.path().join("output");
         output_path.set_extension(extension);
 
+        // Create files in the temporary directory
         let file1 = temp_dir.child("repo/file1.md");
-        file1.write_str("# File 1 Content").unwrap();
-        let file2 = temp_dir.child("repo/file2.md");
-        file2.write_str("# File 2 Content").unwrap();
+        file1.write_str("# File 1 Content")?;
+        let file2 = temp_dir.child("repo/subdir/file2.md");
+        file2.write_str("# File 2 Content")?;
+
+        temp_dir.child("repo/subdir/file2.log").touch()?;
+        temp_dir.child("repo/.hidden.txt").touch()?;
+        temp_dir.child("repo/.hidden/test.txt").touch()?;
 
         let filtered_files = vec![file1.to_path_buf(), file2.to_path_buf()];
 
-        RepoSetup {
-            temp_dir, // If this is not passed, it will be removed
+        Ok(RepoSetup {
+            temp_dir, // If this is not passed, the temporary directory will be removed
             repo_path,
             output_path,
             filtered_files,
-        }
+        })
     }
 
     #[test]
     fn test_create_markdown_output() {
-        let repo = setup_repo("md");
+        let repo = setup_repo("md").unwrap();
 
         let result = create_markdown_output(
             repo.filtered_files,
@@ -162,14 +195,14 @@ mod tests {
 
     #[test]
     fn test_create_json_output() {
-        let repo = setup_repo("json");
+        let repo = setup_repo("json").unwrap();
         let expected_json = json!([
             {
                 "location": "file1.md",
                 "content": "# File 1 Content"
             },
             {
-                "location": "file2.md",
+                "location": "subdir/file2.md",
                 "content": "# File 2 Content"
             }
         ]);
@@ -191,120 +224,90 @@ mod tests {
 
         assert_eq!(json, expected_json);
         assert_eq!(result, ());
-
     }
 
     #[test]
-    fn test_include_pattern() -> Result<(), anyhow::Error> {
-        let temp = assert_fs::TempDir::new().unwrap();
-        let repo_path = temp.path().join("repo");
-        temp.child("repo/file1.txt").touch()?;
-        temp.child("repo/subdir/file2.txt").touch()?;
-        temp.child("repo/subdir/file2.log").touch()?;
+    fn test_include_pattern() {
+        let setup = setup_repo("json").unwrap();
 
-        let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), None, false)?;
+        let filtered_files =
+            get_filtered_files(&setup.repo_path, Some("**/*.md".to_string()), None, false).unwrap();
 
         assert_eq!(filtered_files.len(), 2);
-        assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
-        assert!(filtered_files.contains(&PathBuf::from("subdir/file2.txt")));
-
-        Ok(())
+        assert!(filtered_files.contains(&PathBuf::from("file1.md")));
+        assert!(filtered_files.contains(&PathBuf::from("subdir/file2.md")));
     }
 
     #[test]
-    fn test_include_pattern_subdir_txt_files() -> Result<(), anyhow::Error> {
-        let temp = assert_fs::TempDir::new().unwrap();
-        let repo_path = temp.path().join("repo");
+    fn test_include_pattern_subdir_txt_files() {
+        let setup = setup_repo("json").unwrap();
 
-        // Create files in the root directory
-        temp.child("repo/file1.txt").touch()?;
-        temp.child("repo/file1.log").touch()?;
-
-        // Create files in the subdir directory
-        let subdir = temp.child("repo/subdir");
-        subdir.child("file2.txt").touch()?;
-        subdir.child("file3.log").touch()?;
-        subdir.child("file4.txt").touch()?;
-
-        // Include pattern specifically for txt files in the subdir directory
-        let included_files = get_filtered_files(&repo_path.into(), Some("subdir/*.txt".to_string()), None, false)?;
-
-        // Validate the result
-        assert_eq!(included_files.len(), 2, "Should include exactly two txt files from subdir.");
-        assert!(included_files.contains(&PathBuf::from("subdir/file2.txt")), "Should include file2.txt");
-        assert!(included_files.contains(&PathBuf::from("subdir/file4.txt")), "Should include file4.txt");
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_exclude_pattern() -> Result<(), anyhow::Error> {
-        let temp = assert_fs::TempDir::new().unwrap();
-        let repo_path = temp.path().join("repo");
-        temp.child("repo/file1.txt").touch()?;
-        temp.child("repo/file2.log").touch()?;
-        temp.child("repo/file3.txt").touch()?;
-
-        let filtered_files = get_filtered_files(&repo_path, None, Some("**/*.log".to_string()), false)?;
-
-        assert_eq!(filtered_files.len(), 2);
-        assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
-        assert!(filtered_files.contains(&PathBuf::from("file3.txt")));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_include_and_exclude_pattern() -> Result<(), anyhow::Error> {
-        let temp = assert_fs::TempDir::new().unwrap();
-        let repo_path: PathBuf = temp.path().join("repo");
-        temp.child("repo/file1.txt").touch()?;
-        temp.child("repo/subdir/file2.txt").touch()?;
-        temp.child("repo/subdir/file2.log").touch()?;
-
-        let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), Some("subdir/**/*".to_string()), false)?;
+        let filtered_files = get_filtered_files(
+            &setup.repo_path.into(),
+            Some("subdir/*.md".to_string()),
+            None,
+            false,
+        )
+        .unwrap();
 
         assert_eq!(filtered_files.len(), 1);
-        assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
-
-        Ok(())
+        assert!(filtered_files.contains(&PathBuf::from("subdir/file2.md")));
     }
 
     #[test]
-    fn test_exclude_hidden_files() -> Result<(), anyhow::Error> {
-        let temp = assert_fs::TempDir::new()?;
-        let repo_path: PathBuf = temp.path().join("repo");
+    fn test_exclude_pattern() {
+        let setup = setup_repo("json").unwrap();
 
-        temp.child("repo/visible.txt").touch()?;
-        temp.child("repo/.hidden.txt").touch()?;
-        temp.child("repo/another_visible.txt").touch()?;
+        let filtered_files =
+            get_filtered_files(&setup.repo_path, None, Some("**/*.log".to_string()), false)
+                .unwrap();
 
-        let filtered_files = get_filtered_files(&repo_path, Some("**/*".to_string()), None, false)?;
-
-        assert_eq!(filtered_files.len(), 2, "Should only include visible files, excluding the hidden file.");
-        assert!(filtered_files.contains(&PathBuf::from("visible.txt")), "Should include visible.txt");
-        assert!(filtered_files.contains(&PathBuf::from("another_visible.txt")), "Should include another_visible.txt");
-        assert!(!filtered_files.contains(&PathBuf::from(".hidden.txt")), "Should not include .hidden.txt");
-
-        Ok(())
+        assert_eq!(filtered_files.len(), 2);
+        assert!(filtered_files.contains(&PathBuf::from("file1.md")));
+        assert!(filtered_files.contains(&PathBuf::from("subdir/file2.md")));
     }
 
     #[test]
-    fn test_include_hidden_files() -> Result<(), anyhow::Error> {
-        let temp = assert_fs::TempDir::new()?;
-        let repo_path: PathBuf = temp.path().join("repo");
+    fn test_include_and_exclude_pattern() {
+        let setup = setup_repo("json").unwrap();
 
-        temp.child("repo/visible.txt").touch()?;
-        temp.child("repo/.hidden.txt").touch()?;
-        temp.child("repo/another_visible.txt").touch()?;
+        let filtered_files = get_filtered_files(
+            &setup.repo_path,
+            Some("**/*.md".to_string()),
+            Some("subdir/**/*".to_string()),
+            false,
+        )
+        .unwrap();
 
-        let filtered_files = get_filtered_files(&repo_path, Some("**/*".to_string()), None, true)?;
+        assert_eq!(filtered_files.len(), 1);
+        assert!(filtered_files.contains(&PathBuf::from("file1.md")));
+    }
 
-        assert_eq!(filtered_files.len(), 3, "Should include all files, including the hidden file.");
-        assert!(filtered_files.contains(&PathBuf::from("visible.txt")), "Should include visible.txt");
-        assert!(filtered_files.contains(&PathBuf::from(".hidden.txt")), "Should include .hidden.txt");
-        assert!(filtered_files.contains(&PathBuf::from("another_visible.txt")), "Should include another_visible.txt");
+    #[test]
+    fn test_exclude_hidden_files() {
+        let setup = setup_repo("json").unwrap();
 
-        Ok(())
+        let filtered_files =
+            get_filtered_files(&setup.repo_path, Some("**/*".to_string()), None, false).unwrap();
+
+        assert_eq!(filtered_files.len(), 3);
+        assert!(filtered_files.contains(&PathBuf::from("file1.md")));
+        assert!(filtered_files.contains(&PathBuf::from("subdir/file2.md")));
+
+        assert!(!filtered_files.contains(&PathBuf::from(".hidden.txt")));
+    }
+
+    #[test]
+    fn test_include_hidden_files() {
+        let setup = setup_repo("json").unwrap();
+
+        let filtered_files =
+            get_filtered_files(&setup.repo_path, Some("**/*".to_string()), None, true).unwrap();
+
+        assert_eq!(filtered_files.len(), 5);
+        assert!(filtered_files.contains(&PathBuf::from("file1.md")));
+        assert!(filtered_files.contains(&PathBuf::from("subdir/file2.md")));
+        assert!(filtered_files.contains(&PathBuf::from(".hidden.txt")));
+        assert!(filtered_files.contains(&PathBuf::from(".hidden/test.txt")));
     }
 }
