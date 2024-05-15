@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn test_include_and_exclude_pattern() -> Result<(), anyhow::Error> {
         let temp = assert_fs::TempDir::new().unwrap();
-        let repo_path = temp.path().join("repo");
+        let repo_path: PathBuf = temp.path().join("repo");
         temp.child("repo/file1.txt").touch()?;
         temp.child("repo/subdir/file2.txt").touch()?;
         temp.child("repo/subdir/file2.log").touch()?;
@@ -266,6 +266,44 @@ mod tests {
 
         assert_eq!(filtered_files.len(), 1);
         assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_exclude_hidden_files() -> Result<(), anyhow::Error> {
+        let temp = assert_fs::TempDir::new()?;
+        let repo_path: PathBuf = temp.path().join("repo");
+
+        temp.child("repo/visible.txt").touch()?;
+        temp.child("repo/.hidden.txt").touch()?;
+        temp.child("repo/another_visible.txt").touch()?;
+
+        let filtered_files = get_filtered_files(&repo_path, Some("**/*".to_string()), None, false)?;
+
+        assert_eq!(filtered_files.len(), 2, "Should only include visible files, excluding the hidden file.");
+        assert!(filtered_files.contains(&PathBuf::from("visible.txt")), "Should include visible.txt");
+        assert!(filtered_files.contains(&PathBuf::from("another_visible.txt")), "Should include another_visible.txt");
+        assert!(!filtered_files.contains(&PathBuf::from(".hidden.txt")), "Should not include .hidden.txt");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_include_hidden_files() -> Result<(), anyhow::Error> {
+        let temp = assert_fs::TempDir::new()?;
+        let repo_path: PathBuf = temp.path().join("repo");
+
+        temp.child("repo/visible.txt").touch()?;
+        temp.child("repo/.hidden.txt").touch()?;
+        temp.child("repo/another_visible.txt").touch()?;
+
+        let filtered_files = get_filtered_files(&repo_path, Some("**/*".to_string()), None, true)?;
+
+        assert_eq!(filtered_files.len(), 3, "Should include all files, including the hidden file.");
+        assert!(filtered_files.contains(&PathBuf::from("visible.txt")), "Should include visible.txt");
+        assert!(filtered_files.contains(&PathBuf::from(".hidden.txt")), "Should include .hidden.txt");
+        assert!(filtered_files.contains(&PathBuf::from("another_visible.txt")), "Should include another_visible.txt");
 
         Ok(())
     }
