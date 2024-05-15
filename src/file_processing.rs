@@ -65,25 +65,31 @@ pub fn get_filtered_files(
     include_pattern: Option<String>,
     exclude_pattern: Option<String>,
 ) -> Result<Vec<PathBuf>> {
-    let include_pattern = include_pattern.as_deref().unwrap_or("/**/*");
-    let included_file_paths = glob(&format!("{}/{}", repo_path.display(), include_pattern))
+    let include_pattern = include_pattern.as_deref().unwrap_or("**/*");
+    let include_path = format!("{}/{}", repo_path.display(), include_pattern);
+    let included_file_paths = glob(&include_path)
         .context("Failed to read include glob pattern")?
         .filter_map(Result::ok)
+        .map(|path| path.strip_prefix(repo_path).unwrap().to_path_buf())
         .collect::<HashSet<_>>();
 
     let excluded_file_paths = if let Some(pattern) = exclude_pattern {
-        glob(&format!("{}/{}", repo_path.display(), pattern))
+       let exclude_path = format!("{}/{}", repo_path.display(), pattern);
+        glob(&exclude_path)
             .context("Failed to read exclude glob pattern")?
             .filter_map(Result::ok)
-            .collect()
+            .map(|path: PathBuf| path.strip_prefix(repo_path).unwrap().to_path_buf())
+            .collect::<HashSet<_>>()
     } else {
         HashSet::new()
     };
+  
+    let filtered_files = included_file_paths
+    .difference(&excluded_file_paths)
+    .cloned()
+    .collect();
 
-    Ok(included_file_paths
-        .difference(&excluded_file_paths)
-        .cloned()
-        .collect())
+    Ok(filtered_files)
 }
 
 #[cfg(test)]
@@ -189,8 +195,8 @@ mod tests {
         let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), None)?;
 
         assert_eq!(filtered_files.len(), 2);
-        assert!(filtered_files.contains(&repo_path.join("file1.txt")));
-        assert!(filtered_files.contains(&repo_path.join("subdir/file2.txt")));
+        assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
+        assert!(filtered_files.contains(&PathBuf::from("subdir/file2.txt")));
 
         Ok(())
     }
@@ -215,8 +221,8 @@ mod tests {
 
         // Validate the result
         assert_eq!(included_files.len(), 2, "Should include exactly two txt files from subdir.");
-        assert!(included_files.contains(&subdir.join("file2.txt")), "Should include file2.txt");
-        assert!(included_files.contains(&subdir.join("file4.txt")), "Should include file4.txt");
+        assert!(included_files.contains(&PathBuf::from("subdir/file2.txt")), "Should include file2.txt");
+        assert!(included_files.contains(&PathBuf::from("subdir/file4.txt")), "Should include file4.txt");
 
         Ok(())
     }
@@ -225,15 +231,15 @@ mod tests {
     fn test_exclude_pattern() -> Result<(), anyhow::Error> {
         let temp = assert_fs::TempDir::new().unwrap();
         let repo_path = temp.path().join("repo");
-        temp.child("file1.txt").touch()?;
-        temp.child("file2.log").touch()?;
-        temp.child("file3.txt").touch()?;
+        temp.child("repo/file1.txt").touch()?;
+        temp.child("repo/file2.log").touch()?;
+        temp.child("repo/file3.txt").touch()?;
 
         let filtered_files = get_filtered_files(&repo_path, None, Some("**/*.log".to_string()))?;
 
         assert_eq!(filtered_files.len(), 2);
-        assert!(filtered_files.contains(&repo_path.join("file1.txt")));
-        assert!(filtered_files.contains(&repo_path.join("file3.txt")));
+        assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
+        assert!(filtered_files.contains(&PathBuf::from("file3.txt")));
 
         Ok(())
     }
@@ -246,10 +252,10 @@ mod tests {
         temp.child("repo/subdir/file2.txt").touch()?;
         temp.child("repo/subdir/file2.log").touch()?;
 
-        let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), Some("subdir/**".to_string()))?;
+        let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), Some("subdir/**/*".to_string()))?;
 
         assert_eq!(filtered_files.len(), 1);
-        assert!(filtered_files.contains(&repo_path.join("file1.txt")));
+        assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
 
         Ok(())
     }
