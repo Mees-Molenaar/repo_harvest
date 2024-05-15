@@ -18,7 +18,8 @@ fn main() -> Result<()> {
     let filtered_files = file_processing::get_filtered_files(
         &repo_path, 
         args.include, 
-        args.exclude)?;
+        args.exclude,
+    args.hidden)?;
 
     let output_file = PathBuf::from(&args.output_file);
 

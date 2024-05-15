@@ -64,12 +64,14 @@ pub fn get_filtered_files(
     repo_path: &PathBuf,
     include_pattern: Option<String>,
     exclude_pattern: Option<String>,
+    include_hidden: bool,
 ) -> Result<Vec<PathBuf>> {
     let include_pattern = include_pattern.as_deref().unwrap_or("**/*");
     let include_path = format!("{}/{}", repo_path.display(), include_pattern);
     let included_file_paths = glob(&include_path)
         .context("Failed to read include glob pattern")?
         .filter_map(Result::ok)
+        .filter(|path| include_hidden || !is_hidden(&path))
         .map(|path| path.strip_prefix(repo_path).unwrap().to_path_buf())
         .collect::<HashSet<_>>();
 
@@ -78,6 +80,7 @@ pub fn get_filtered_files(
         glob(&exclude_path)
             .context("Failed to read exclude glob pattern")?
             .filter_map(Result::ok)
+            .filter(|path| include_hidden || !is_hidden(&path))
             .map(|path: PathBuf| path.strip_prefix(repo_path).unwrap().to_path_buf())
             .collect::<HashSet<_>>()
     } else {
@@ -90,6 +93,13 @@ pub fn get_filtered_files(
     .collect();
 
     Ok(filtered_files)
+}
+
+fn is_hidden(path: &PathBuf) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.starts_with('.'))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -192,7 +202,7 @@ mod tests {
         temp.child("repo/subdir/file2.txt").touch()?;
         temp.child("repo/subdir/file2.log").touch()?;
 
-        let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), None)?;
+        let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), None, false)?;
 
         assert_eq!(filtered_files.len(), 2);
         assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
@@ -217,7 +227,7 @@ mod tests {
         subdir.child("file4.txt").touch()?;
 
         // Include pattern specifically for txt files in the subdir directory
-        let included_files = get_filtered_files(&repo_path.into(), Some("subdir/*.txt".to_string()), None)?;
+        let included_files = get_filtered_files(&repo_path.into(), Some("subdir/*.txt".to_string()), None, false)?;
 
         // Validate the result
         assert_eq!(included_files.len(), 2, "Should include exactly two txt files from subdir.");
@@ -235,7 +245,7 @@ mod tests {
         temp.child("repo/file2.log").touch()?;
         temp.child("repo/file3.txt").touch()?;
 
-        let filtered_files = get_filtered_files(&repo_path, None, Some("**/*.log".to_string()))?;
+        let filtered_files = get_filtered_files(&repo_path, None, Some("**/*.log".to_string()), false)?;
 
         assert_eq!(filtered_files.len(), 2);
         assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
@@ -252,7 +262,7 @@ mod tests {
         temp.child("repo/subdir/file2.txt").touch()?;
         temp.child("repo/subdir/file2.log").touch()?;
 
-        let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), Some("subdir/**/*".to_string()))?;
+        let filtered_files = get_filtered_files(&repo_path, Some("**/*.txt".to_string()), Some("subdir/**/*".to_string()), false)?;
 
         assert_eq!(filtered_files.len(), 1);
         assert!(filtered_files.contains(&PathBuf::from("file1.txt")));
