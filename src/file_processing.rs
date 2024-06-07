@@ -49,7 +49,16 @@ fn build_file_entries(filtered_files: &[PathBuf], repo_path: &PathBuf) -> Result
         .iter()
         .map(|path| {
             println!("{:?}", path);
-            let content = fs::read_to_string(path).unwrap();
+            let full_path = repo_path.join(path);
+            
+            let content = match fs::read_to_string(&full_path) {
+                Ok(content) => content,
+                Err(e) => {
+                    eprintln!("Error reading file contents of {:?}: {}", &full_path, e);
+                    String::new()
+                }
+            };
+            
             let location = path
                 .strip_prefix(repo_path)
                 .unwrap_or(path)
